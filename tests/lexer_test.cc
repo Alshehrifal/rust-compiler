@@ -42,12 +42,6 @@ static std::vector<Token> tokenizeNoEof(const std::string& source) {
         EXPECT_EQ(tokens[0].lexeme, expected_lexeme);                        \
     } while (0)
 
-// Generate a full TEST() for a keyword (source text == expected lexeme)
-#define TEST_KEYWORD(test_name, keyword_str, token_type)    \
-    TEST(LexerKeywords, test_name) {                        \
-        ASSERT_SINGLE_TOKEN_LEXEME(keyword_str, token_type, keyword_str); \
-    }
-
 // Generate a full TEST() for a single-char token (type check only)
 #define TEST_TOKEN(group, test_name, source, token_type)    \
     TEST(group, test_name) {                                \
@@ -60,18 +54,37 @@ static std::vector<Token> tokenizeNoEof(const std::string& source) {
         ASSERT_SINGLE_TOKEN_LEXEME(source, token_type, lexeme);         \
     }
 
+// Expected token for sequence assertions (lexeme is optional)
+struct Expected {
+    TokenType type;
+    std::string lexeme;  // empty = don't check
+};
+
+// Assert source tokenizes to an exact sequence of tokens
+static void assertTokenSequence(const std::string& source,
+                                const std::vector<Expected>& expected) {
+    auto tokens = tokenizeNoEof(source);
+    ASSERT_EQ(tokens.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_EQ(tokens[i].type, expected[i].type)
+            << "token[" << i << "] type mismatch";
+        if (!expected[i].lexeme.empty()) {
+            EXPECT_EQ(tokens[i].lexeme, expected[i].lexeme)
+                << "token[" << i << "] lexeme mismatch";
+        }
+    }
+}
+
 // ============================================================
-// Keywords -- 8 tests generated from 8 macro calls
+// Keywords -- generated from KEYWORD_TOKENS X-macro
 // ============================================================
 
-TEST_KEYWORD(Fn,     "fn",     KW_FN)
-TEST_KEYWORD(Let,    "let",    KW_LET)
-TEST_KEYWORD(Mut,    "mut",    KW_MUT)
-TEST_KEYWORD(If,     "if",     KW_IF)
-TEST_KEYWORD(Else,   "else",   KW_ELSE)
-TEST_KEYWORD(While,  "while",  KW_WHILE)
-TEST_KEYWORD(Return, "return", KW_RETURN)
-TEST_KEYWORD(Struct, "struct", KW_STRUCT)
+#define GEN_KEYWORD_TEST(name, str)                      \
+    TEST(LexerKeywords, name) {                          \
+        ASSERT_SINGLE_TOKEN_LEXEME(str, name, str);      \
+    }
+KEYWORD_TOKENS(GEN_KEYWORD_TEST)
+#undef GEN_KEYWORD_TEST
 
 // ============================================================
 // Identifiers
@@ -103,18 +116,24 @@ TEST(LexerStrings, EscapeSequences) {
 }
 
 // ============================================================
-// Arithmetic Operators
+// Single-char tokens -- generated from SINGLE_CHAR_TOKENS X-macro
 // ============================================================
 
-TEST_TOKEN(LexerOperators, Plus,  "+", PLUS)
+#define GEN_SINGLE_CHAR_TEST(name, ch)                         \
+    TEST(LexerSingleChar, name) {                              \
+        const std::string src(1, ch);                          \
+        auto tokens = tokenizeNoEof(src);                      \
+        ASSERT_EQ(tokens.size(), 1u);                          \
+        EXPECT_EQ(tokens[0].type, TokenType::name);            \
+    }
+SINGLE_CHAR_TOKENS(GEN_SINGLE_CHAR_TEST)
+#undef GEN_SINGLE_CHAR_TEST
+
+// ============================================================
+// Multi-char operators (require lookahead, tested manually)
+// ============================================================
+
 TEST_TOKEN(LexerOperators, Minus, "-", MINUS)
-TEST_TOKEN(LexerOperators, Star,  "*", STAR)
-TEST_TOKEN(LexerOperators, SlashOp, "/", SLASH)
-
-// ============================================================
-// Assignment
-// ============================================================
-
 TEST_TOKEN(LexerOperators, Equals, "=", EQUALS)
 
 // ============================================================
@@ -135,29 +154,15 @@ TEST_TOKEN_LEXEME(LexerComparison, GtEq, ">=", GTEQ, ">=")
 TEST_TOKEN_LEXEME(LexerOperators, Arrow, "->", ARROW, "->")
 
 // ============================================================
-// Punctuation -- 9 tests generated from 9 macro calls
-// ============================================================
-
-TEST_TOKEN(LexerPunctuation, LParen,    "(", LPAREN)
-TEST_TOKEN(LexerPunctuation, RParen,    ")", RPAREN)
-TEST_TOKEN(LexerPunctuation, LBrace,    "{", LBRACE)
-TEST_TOKEN(LexerPunctuation, RBrace,    "}", RBRACE)
-TEST_TOKEN(LexerPunctuation, LBracket,  "[", LBRACKET)
-TEST_TOKEN(LexerPunctuation, RBracket,  "]", RBRACKET)
-TEST_TOKEN(LexerPunctuation, Semicolon, ";", SEMICOLON)
-TEST_TOKEN(LexerPunctuation, Colon,     ":", COLON)
-TEST_TOKEN(LexerPunctuation, Comma,     ",", COMMA)
-
-// ============================================================
 // Whitespace Handling
 // ============================================================
 
 TEST(LexerWhitespace, SkipsSpacesTabsNewlines) {
-    auto tokens = tokenizeNoEof("  fn  \t  let  \n  mut  ");
-    ASSERT_EQ(tokens.size(), 3u);
-    EXPECT_EQ(tokens[0].type, TokenType::KW_FN);
-    EXPECT_EQ(tokens[1].type, TokenType::KW_LET);
-    EXPECT_EQ(tokens[2].type, TokenType::KW_MUT);
+    assertTokenSequence("  fn  \t  let  \n  mut  ", {
+        {TokenType::KW_FN,  {}},
+        {TokenType::KW_LET, {}},
+        {TokenType::KW_MUT, {}},
+    });
 }
 
 TEST(LexerWhitespace, LineTracking) {
@@ -173,57 +178,54 @@ TEST(LexerWhitespace, LineTracking) {
 // ============================================================
 
 TEST(LexerCombined, LetBinding) {
-    auto tokens = tokenizeNoEof("let x = 42;");
-    ASSERT_EQ(tokens.size(), 5u);
-    EXPECT_EQ(tokens[0].type, TokenType::KW_LET);
-    EXPECT_EQ(tokens[1].type, TokenType::IDENT);
-    EXPECT_EQ(tokens[1].lexeme, "x");
-    EXPECT_EQ(tokens[2].type, TokenType::EQUALS);
-    EXPECT_EQ(tokens[3].type, TokenType::NUMBER);
-    EXPECT_EQ(tokens[3].lexeme, "42");
-    EXPECT_EQ(tokens[4].type, TokenType::SEMICOLON);
+    assertTokenSequence("let x = 42;", {
+        {TokenType::KW_LET,   {}},
+        {TokenType::IDENT,    "x"},
+        {TokenType::EQUALS,   {}},
+        {TokenType::NUMBER,   "42"},
+        {TokenType::SEMICOLON,{}},
+    });
 }
 
 TEST(LexerCombined, FnMain) {
-    auto tokens = tokenizeNoEof("fn main() {}");
-    ASSERT_EQ(tokens.size(), 6u);
-    EXPECT_EQ(tokens[0].type, TokenType::KW_FN);
-    EXPECT_EQ(tokens[1].type, TokenType::IDENT);
-    EXPECT_EQ(tokens[1].lexeme, "main");
-    EXPECT_EQ(tokens[2].type, TokenType::LPAREN);
-    EXPECT_EQ(tokens[3].type, TokenType::RPAREN);
-    EXPECT_EQ(tokens[4].type, TokenType::LBRACE);
-    EXPECT_EQ(tokens[5].type, TokenType::RBRACE);
+    assertTokenSequence("fn main() {}", {
+        {TokenType::KW_FN,  {}},
+        {TokenType::IDENT,  "main"},
+        {TokenType::LPAREN, {}},
+        {TokenType::RPAREN, {}},
+        {TokenType::LBRACE, {}},
+        {TokenType::RBRACE, {}},
+    });
 }
 
 TEST(LexerCombined, FullFunction) {
-    auto tokens = tokenizeNoEof(
+    assertTokenSequence(
         "fn add(a: i32, b: i32) -> i32 {\n"
         "    return a + b;\n"
-        "}"
+        "}",
+        {
+            {TokenType::KW_FN,    {}},
+            {TokenType::IDENT,    "add"},
+            {TokenType::LPAREN,   {}},
+            {TokenType::IDENT,    "a"},
+            {TokenType::COLON,    {}},
+            {TokenType::IDENT,    "i32"},
+            {TokenType::COMMA,    {}},
+            {TokenType::IDENT,    "b"},
+            {TokenType::COLON,    {}},
+            {TokenType::IDENT,    "i32"},
+            {TokenType::RPAREN,   {}},
+            {TokenType::ARROW,    {}},
+            {TokenType::IDENT,    "i32"},
+            {TokenType::LBRACE,   {}},
+            {TokenType::KW_RETURN,{}},
+            {TokenType::IDENT,    "a"},
+            {TokenType::PLUS,     {}},
+            {TokenType::IDENT,    "b"},
+            {TokenType::SEMICOLON,{}},
+            {TokenType::RBRACE,   {}},
+        }
     );
-    ASSERT_EQ(tokens.size(), 20u);
-    EXPECT_EQ(tokens[0].type, TokenType::KW_FN);
-    EXPECT_EQ(tokens[1].type, TokenType::IDENT);
-    EXPECT_EQ(tokens[1].lexeme, "add");
-    EXPECT_EQ(tokens[2].type, TokenType::LPAREN);
-    EXPECT_EQ(tokens[3].type, TokenType::IDENT);  // a
-    EXPECT_EQ(tokens[4].type, TokenType::COLON);
-    EXPECT_EQ(tokens[5].type, TokenType::IDENT);  // i32
-    EXPECT_EQ(tokens[6].type, TokenType::COMMA);
-    EXPECT_EQ(tokens[7].type, TokenType::IDENT);  // b
-    EXPECT_EQ(tokens[8].type, TokenType::COLON);
-    EXPECT_EQ(tokens[9].type, TokenType::IDENT);  // i32
-    EXPECT_EQ(tokens[10].type, TokenType::RPAREN);
-    EXPECT_EQ(tokens[11].type, TokenType::ARROW);
-    EXPECT_EQ(tokens[12].type, TokenType::IDENT); // i32
-    EXPECT_EQ(tokens[13].type, TokenType::LBRACE);
-    EXPECT_EQ(tokens[14].type, TokenType::KW_RETURN);
-    EXPECT_EQ(tokens[15].type, TokenType::IDENT); // a
-    EXPECT_EQ(tokens[16].type, TokenType::PLUS);
-    EXPECT_EQ(tokens[17].type, TokenType::IDENT); // b
-    EXPECT_EQ(tokens[18].type, TokenType::SEMICOLON);
-    EXPECT_EQ(tokens[19].type, TokenType::RBRACE);
 }
 
 // ============================================================
@@ -244,15 +246,13 @@ TEST(LexerEdgeCases, ArrowIsNotMinusThenGt) {
     ASSERT_SINGLE_TOKEN("->", ARROW);
 }
 
-TEST_TOKEN_LEXEME(LexerEdgeCases, FnNameIsIdentNotKeyword, "fn_name", IDENT, "fn_name")
-
 TEST(LexerEdgeCases, ConsecutiveOperatorsNoWhitespace) {
-    auto tokens = tokenizeNoEof("+-*/");
-    ASSERT_EQ(tokens.size(), 4u);
-    EXPECT_EQ(tokens[0].type, TokenType::PLUS);
-    EXPECT_EQ(tokens[1].type, TokenType::MINUS);
-    EXPECT_EQ(tokens[2].type, TokenType::STAR);
-    EXPECT_EQ(tokens[3].type, TokenType::SLASH);
+    assertTokenSequence("+-*/", {
+        {TokenType::PLUS,  {}},
+        {TokenType::MINUS, {}},
+        {TokenType::STAR,  {}},
+        {TokenType::SLASH, {}},
+    });
 }
 
 TEST_TOKEN(LexerEdgeCases, UnknownCharProducesError, "@", ERROR)

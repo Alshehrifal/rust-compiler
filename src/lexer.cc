@@ -1,16 +1,24 @@
 #include "lexer.h"
 #include <unordered_map>
 
+// Generated from KEYWORD_TOKENS X-macro
 static const std::unordered_map<std::string, TokenType> keywords = {
-    {"fn",     TokenType::KW_FN},
-    {"let",    TokenType::KW_LET},
-    {"mut",    TokenType::KW_MUT},
-    {"if",     TokenType::KW_IF},
-    {"else",   TokenType::KW_ELSE},
-    {"while",  TokenType::KW_WHILE},
-    {"return", TokenType::KW_RETURN},
-    {"struct", TokenType::KW_STRUCT},
+#define KEYWORD_ENTRY(name, str) {str, TokenType::name},
+    KEYWORD_TOKENS(KEYWORD_ENTRY)
+#undef KEYWORD_ENTRY
 };
+
+static inline bool isIdentStart(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+static inline bool isIdentContinue(char c) {
+    return isIdentStart(c) || (c >= '0' && c <= '9');
+}
+
+static inline bool isDigit(char c) {
+    return c >= '0' && c <= '9';
+}
 
 Lexer::Lexer(std::istream& input)
     : input_(input), line_(1), column_(1), eof_(false) {}
@@ -61,14 +69,8 @@ Token Lexer::readIdentOrKeyword() {
     int startLine = line_;
     int startCol = column_;
     std::string word;
-    while (true) {
-        char c = peek();
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '_') {
-            word += advance();
-        } else {
-            break;
-        }
+    while (isIdentContinue(peek())) {
+        word += advance();
     }
     auto it = keywords.find(word);
     if (it != keywords.end()) {
@@ -81,13 +83,8 @@ Token Lexer::readNumber() {
     int startLine = line_;
     int startCol = column_;
     std::string num;
-    while (true) {
-        char c = peek();
-        if ((c >= '0' && c <= '9') || c == '_') {
-            num += advance();
-        } else {
-            break;
-        }
+    while (isDigit(peek()) || peek() == '_') {
+        num += advance();
     }
     return makeToken(TokenType::NUMBER, num, startLine, startCol);
 }
@@ -114,11 +111,10 @@ Token Lexer::readString() {
             }
             advance();
             switch (next) {
-                case 'n':  value += '\n'; break;
-                case 't':  value += '\t'; break;
-                case '\\': value += '\\'; break;
-                case '"':  value += '"';  break;
-                default:   value += next; break;
+#define ESCAPE_CASE(esc, actual) case esc: value += actual; break;
+                ESCAPE_SEQUENCES(ESCAPE_CASE)
+#undef ESCAPE_CASE
+                default: value += next; break;
             }
         } else {
             value += advance();
@@ -140,12 +136,12 @@ Token Lexer::nextToken() {
     }
 
     // Identifiers and keywords
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+    if (isIdentStart(c)) {
         return readIdentOrKeyword();
     }
 
     // Numbers
-    if (c >= '0' && c <= '9') {
+    if (isDigit(c)) {
         return readNumber();
     }
 
@@ -158,18 +154,11 @@ Token Lexer::nextToken() {
     advance();
 
     switch (c) {
-        case '+': return makeToken(TokenType::PLUS,      "+", startLine, startCol);
-        case '*': return makeToken(TokenType::STAR,      "*", startLine, startCol);
-        case '/': return makeToken(TokenType::SLASH,     "/", startLine, startCol);
-        case '(': return makeToken(TokenType::LPAREN,    "(", startLine, startCol);
-        case ')': return makeToken(TokenType::RPAREN,    ")", startLine, startCol);
-        case '{': return makeToken(TokenType::LBRACE,    "{", startLine, startCol);
-        case '}': return makeToken(TokenType::RBRACE,    "}", startLine, startCol);
-        case '[': return makeToken(TokenType::LBRACKET,  "[", startLine, startCol);
-        case ']': return makeToken(TokenType::RBRACKET,  "]", startLine, startCol);
-        case ';': return makeToken(TokenType::SEMICOLON, ";", startLine, startCol);
-        case ':': return makeToken(TokenType::COLON,     ":", startLine, startCol);
-        case ',': return makeToken(TokenType::COMMA,     ",", startLine, startCol);
+        // Generated from SINGLE_CHAR_TOKENS X-macro
+#define CHAR_CASE(name, ch) \
+        case ch: return makeToken(TokenType::name, std::string(1, ch), startLine, startCol);
+        SINGLE_CHAR_TOKENS(CHAR_CASE)
+#undef CHAR_CASE
 
         case '-':
             if (peek() == '>') {
