@@ -13,13 +13,18 @@ rust-compiler/
   docs/              Documentation (DDD -- docs first)
     architecture.md  This file
     lexer.md         Lexer specification and grammar
+    parser.md        Parser specification, grammar, and AST design
   src/               Source code
     token.h          Token types and Token struct
     lexer.h          Lexer class declaration
     lexer.cc         Lexer implementation
-    main.cc          CLI entry point
+    ast.h            AST node hierarchy (X-macro NodeKind enum)
+    parser.h         Parser class declaration + ParseError
+    parser.cc        Recursive descent parser implementation
+    main.cc          CLI entry point (--parse flag for AST output)
   tests/             Test suite
     lexer_test.cc    Lexer unit/integration tests (Google Test)
+    parser_test.cc   Parser unit/integration tests (Google Test)
   CMakeLists.txt     Build system
   CLAUDE.md          Project-specific AI guidance
   README.md          Project readme
@@ -35,15 +40,18 @@ cd build && ctest --output-on-failure
 
 ## Components
 
-### Lexer (Phase 1 -- Current)
+### Lexer (Phase 1 -- Complete)
 
 Converts a stream of characters into a stream of tokens. Handles keywords,
 identifiers, numeric literals, string literals, operators, and punctuation.
 See `docs/lexer.md` for the full specification.
 
-### Parser (Phase 2 -- Future)
+### Parser (Phase 2 -- Current)
 
-Will consume tokens from the lexer and produce an abstract syntax tree (AST).
+Recursive descent parser that consumes the token stream and produces an AST.
+Supports functions, let bindings, if/else, while/for loops, return statements,
+expressions with operator precedence, function calls, and array indexing.
+See `docs/parser.md` for the grammar and AST design.
 
 ### Semantic Analysis (Phase 3 -- Future)
 
