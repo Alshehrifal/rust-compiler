@@ -231,6 +231,19 @@ TEST(ParserExpr, ChainedCalls) {
     EXPECT_EQ(outer->args.size(), 1u);
 }
 
+TEST(ParserExpr, GroupedPrecedenceOverride) {
+    // a * (b + c) should parse as a * (b + c), not (a * b) + c
+    auto expr = parseExpr("a * (b + c)");
+    ASSERT_EQ(expr->kind(), NodeKind::BinaryExpr);
+    auto* mult = dynamic_cast<BinaryExprNode*>(expr.get());
+    EXPECT_EQ(mult->op, TokenType::STAR);
+    EXPECT_EQ(mult->left->kind(), NodeKind::Ident);
+    // Right side should be the addition (grouped by parens)
+    ASSERT_EQ(mult->right->kind(), NodeKind::BinaryExpr);
+    auto* add = dynamic_cast<BinaryExprNode*>(mult->right.get());
+    EXPECT_EQ(add->op, TokenType::PLUS);
+}
+
 TEST(ParserExpr, ComplexPrecedence) {
     // -a + b * c == d parses as ((-a) + (b * c)) == d
     auto expr = parseExpr("-a + b * c == d"); // NOLINT
@@ -338,6 +351,29 @@ TEST(ParserStmt, ForLoop) {
     EXPECT_EQ(forStmt->variable, "i");
     EXPECT_NE(forStmt->iterable, nullptr);
     EXPECT_NE(forStmt->body, nullptr);
+}
+
+TEST(ParserStmt, NestedBlock) {
+    auto program = parseProgram("fn _() { { x; } }");
+    auto& stmts = program->functions[0]->body->statements;
+    ASSERT_EQ(stmts.size(), 1u);
+    ASSERT_EQ(stmts[0]->kind(), NodeKind::Block);
+    auto* inner = dynamic_cast<BlockNode*>(stmts[0].get());
+    ASSERT_EQ(inner->statements.size(), 1u);
+    EXPECT_EQ(inner->statements[0]->kind(), NodeKind::ExprStmt);
+}
+
+TEST(ParserStmt, DeeplyNestedBlocks) {
+    auto program = parseProgram("fn _() { { { x; } } }");
+    auto& stmts = program->functions[0]->body->statements;
+    ASSERT_EQ(stmts.size(), 1u);
+    ASSERT_EQ(stmts[0]->kind(), NodeKind::Block);
+    auto* mid = dynamic_cast<BlockNode*>(stmts[0].get());
+    ASSERT_EQ(mid->statements.size(), 1u);
+    ASSERT_EQ(mid->statements[0]->kind(), NodeKind::Block);
+    auto* inner = dynamic_cast<BlockNode*>(mid->statements[0].get());
+    ASSERT_EQ(inner->statements.size(), 1u);
+    EXPECT_EQ(inner->statements[0]->kind(), NodeKind::ExprStmt);
 }
 
 TEST(ParserStmt, ExpressionStatement) {

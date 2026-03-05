@@ -127,6 +127,7 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
     if (check(TokenType::token)) return method();
     STMT_DISPATCH(CHECK_STMT)
 #undef CHECK_STMT
+    if (check(TokenType::LBRACE)) return parseBlock();
     return parseExprStmt();
 }
 
